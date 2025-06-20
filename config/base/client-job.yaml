@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: client-job
+spec:
+  completions: ${NUMBER_OF_CLIENTS}               # Run the job 20 times
+  parallelism: ${NUMBER_OF_CLIENTS}                # Run 5 pods at the same time
+  backoffLimit: 1               # Retry once on failure
+  template:
+    spec:
+      containers:
+      - name: client
+        image: gremio-client  # Replace with your real image name
+        imagePullPolicy: Never
+        volumeMounts:
+        - name: host-volume
+          mountPath: /results
+      volumes:
+      - name: host-volume
+        hostPath:
+          path: /mnt/k8s-results   # Path on host machine
+          type: DirectoryOrCreate
+      restartPolicy: Never
+  ttlSecondsAfterFinished: 60  # Cleanup after 60 seconds

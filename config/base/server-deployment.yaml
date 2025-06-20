@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-deploy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: server
+  template:
+    metadata:
+      labels:
+        app: server
+    spec:
+      containers:
+      - name: socket-server
+        imagePullPolicy: Never
+        image: gremio:python
+        ports:
+        - containerPort: 9999
+        resources:
+          requests:
+            cpu: "100m"
+          limits:
+            cpu: "200m"
