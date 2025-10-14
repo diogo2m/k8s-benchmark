@@ -6,17 +6,22 @@ CURRENT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_FILE_PATH="results/$(date +%s)"
 
 # Benchmark configurations
-MIN_CLIENTS=10
-MAX_CLIENTS=100
+MIN_CLIENTS=256
+MAX_CLIENTS=256
 CLIENT_STEP=10
 
+HPA=true
 MIN_SERVERS=2
 MAX_SERVERS=10
 SERVER_STEP=2
 
 REPETITIONS=1
 
-MESSAGES_LIST="1 10 100"
+MESSAGES_LIST="1000"
+#"100 150 100 200 100 1000 100"
+#"1 10 100"
+
+COOLDOWN_TIME=1
 
 SERVER_IP=$(kubectl get svc socket-server-lb -o jsonpath='{.spec.clusterIP}')
 SERVER_PORT=80
@@ -30,7 +35,7 @@ mkdir -p $OUTPUT_FILE_PATH
 
 run_message_generator_script_mode(){
   echo ">>> Starting message generation."
-  bash scripts/client.sh $SERVER_IP $SERVER_PORT $c $m
+  bash scripts/client2.sh $SERVER_IP $SERVER_PORT $c $m
 }
 
 run_message_generator_container_mode(){
@@ -67,10 +72,29 @@ clean_env(){
   done
 
   kubectl delete deployment server-deploy
+  kubectl delete hpa server-hpa
+  kubectl delete -f config/base/metrics-server.yaml
 
   rm -f /mnt/k8s-results/*
 
 }
+
+end_env(){
+
+  clean_env
+
+  sudo kill $PID
+}
+
+
+# MAIN LOOP
+
+trap "end_env; exit 0" SIGINT
+
+clean_env
+
+nohup scripts/monitor.sh > monitor_sh.log 2>&1 &
+PID=($!)
 
 for (( iter=0; iter<REPETITIONS; iter+=1))
 do
@@ -87,15 +111,27 @@ do
   kubectl apply -f $DEPLOYMENT_FILE
   kubectl apply -f config/base/server-service.yaml
 
+  if [ "$HPA" = "true" ] ; then
+    kubectl apply -f config/base/hpa.yaml
+    kubectl apply -f config/base/metrics-server.yaml
+    MIN_SERVERS=-1
+    MAX_SERVERS=-1
+  fi
+
+  echo ">>> Waiting 30 seconds for server to start..."
+  sleep 30
+
   for m in $MESSAGES_LIST
   do
     for (( s=MIN_SERVERS; s<=MAX_SERVERS; s+=SERVER_STEP ))
     do
-      echo ">>> Scaling servers to $s replicas..."
-      kubectl scale deployment server-deploy --replicas=$s
 
-      echo "> Waiting 30 seconds for server scaling..."
-      sleep 30
+      if [ ! "$HPA" = "true" ] ; then
+        echo ">>> Scaling servers to $s replicas..."
+        kubectl scale deployment server-deploy --replicas=$s
+        echo "> Waiting 30 seconds for server scaling..."
+        sleep 30
+      fi 
 
       for (( c=MIN_CLIENTS; c<=MAX_CLIENTS; c+=CLIENT_STEP ))
       do
@@ -107,27 +143,30 @@ do
             run_message_generator_container_mode
         fi
     
-        sleep 2
+        #sleep 2
 
         # Run mean_results.py with label argument
-        python3 scripts/mean_results.py "${c}clients-${s}servers-${m}messages"
+        #python3 scripts/mean_results.py "${c}clients-${s}servers-${m}messages"
 
-        sleep 2
+        #sleep 2
 
-        rm -f /mnt/k8s-results/*
+        rm -f /mnt/k8s-results/* 2>/dev/null
 
         #envsubst < client-job.yaml | kubectl delete -f -
-        sleep 30
+        echo ">>> Cooling Down"
+        sleep $COOLDOWN_TIME
       done
     done
 
-    python3 scripts/plot.py average_result.csv
-    mv plots ${OUTPUT_FILE_PATH}/plots_${m}_${iter}
-    mv average_result.csv ${OUTPUT_FILE_PATH}/average_result_${m}_${iter}.csv
-    mv resources_log ${OUTPUT_FILE_PATH}/resources_log_${m}_${iter}
+    #python3 scripts/plot.py average_result.csv
+    #mv plots ${OUTPUT_FILE_PATH}/plots_${m}_${iter}
+    #mv average_result.csv ${OUTPUT_FILE_PATH}/average_result_${m}_${iter}.csv
+    #mv resources_log ${OUTPUT_FILE_PATH}/resources_log_${m}_${iter}
 
   done
 done
+
+end_env
 
 echo "DONE!"
 

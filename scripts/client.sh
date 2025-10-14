@@ -17,6 +17,17 @@ OUTPUT_DIR="client_results_$TIMESTAMP"
 OUTPUT_DIR=/mnt/k8s-results
 mkdir -p "$OUTPUT_DIR"
 
+PIDS=()
+
+clean_env(){
+  echo "=== Stopping clients"
+  if [ ${#PIDS[@]} -gt 0 ]; then
+    kill "${PIDS[@]}" 2>/dev/null
+    PIDS=()
+  fi
+  exit 0
+}
+
 # Function to simulate a client
 simulate_client() {
   local client_id="$1"
@@ -41,7 +52,10 @@ simulate_client() {
 # Start all clients in the background
 for ((i=1; i<=NUM_CLIENTS; i++)); do
   simulate_client "$i" &
+  PIDS+=($!)
 done
+
+trap clean_env SIGINT
 
 # Wait for all clients to complete
 wait
