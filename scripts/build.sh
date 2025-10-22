@@ -21,6 +21,16 @@ build_server_go() {
   DEPLOYMENT_FILE=server-deployment-go.yaml
 }
 
+build_server_udp_go() {
+  echo ">>> Building Gremio-Go"
+  cd docker/base/server-container-udp-golang || exit 1
+  docker build . -t gremio:udp-go
+  docker save gremio:udp-go -o gremio-go.tar
+  ctr -n k8s.io image import gremio-go.tar
+  cd $CURRENT_DIR
+  DEPLOYMENT_FILE=server-deployment-udp-go.yaml
+}
+
 build_client() {
   echo ">>> Building Gremio-Client"
   cd docker/base/client-container || exit 1
@@ -34,9 +44,12 @@ if [[ "$1" == "python" ]]; then
   build_server_python
 elif [[ "$1" == "go" ]]; then
   build_server_go
+elif [[ "$1" == "udp-go" ]]; then
+  build_server_udp_go
 else
   build_server_python
   build_server_go
+  build_server_udp_go
 fi
 
 build_client

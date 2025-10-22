@@ -2,12 +2,15 @@
 
 CURRENT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+mkdir -p logs
+LOG_FILE="logs/benchmark.log"
+
 # General configurations
 OUTPUT_FILE_PATH="results/$(date +%s)"
 
 # Benchmark configurations
-MIN_CLIENTS=256
-MAX_CLIENTS=256
+MIN_CLIENTS=12
+MAX_CLIENTS=12
 CLIENT_STEP=10
 
 HPA=true
@@ -17,7 +20,7 @@ SERVER_STEP=2
 
 REPETITIONS=1
 
-MESSAGES_LIST="1000"
+MESSAGES_LIST="1000 2000 3000 4000 5000"
 #"100 150 100 200 100 1000 100"
 #"1 10 100"
 
@@ -29,7 +32,7 @@ SERVER_PORT=80
 # Defines how request will be generated container|script
 TRAFFIG_GENERATION_MODE=script
 
-TAG_IMAGE=go
+TAG_IMAGE=udp-go
 
 mkdir -p $OUTPUT_FILE_PATH
 
@@ -68,21 +71,23 @@ clean_env(){
   echo ">>> Deleting old jobs"
   kubectl delete job client-job --ignore-not-found
   kubectl get pods --all-namespaces -o jsonpath="{range .items[?(@.metadata.name=='client-job')]}{.metadata.namespace}{'\t'}{.metadata.name}{'\n'}{end}" | while read namespace pod; do
-    kubectl delete pod "$pod" -n "$namespace"
+    kubectl delete pod "$pod" -n "$namespace" --ignore-not-found
   done
 
-  kubectl delete deployment server-deploy
-  kubectl delete hpa server-hpa
-  kubectl delete -f config/base/metrics-server.yaml
+  kubectl delete deployment server-deploy --ignore-not-found
+  kubectl delete service socket-server-lb --ignore-not-found
+  #kubectl delete daemonset server-deploy
+  kubectl delete -f config/base/server-service.yaml --ignore-not-found
+  kubectl delete -f config/base/server-service-udp.yaml --ignore-not-found
+  kubectl delete hpa server-hpa --ignore-not-found
+  kubectl delete -f config/base/metrics-server.yaml --ignore-not-found
 
   rm -f /mnt/k8s-results/*
 
 }
 
 end_env(){
-
   clean_env
-
   sudo kill $PID
 }
 
@@ -103,17 +108,23 @@ do
 
   echo ">>> Starting server deployment"
   if [[ "$TAG_IMAGE" == "go" ]]; then
-    DEPLOYMENT_FILE=config/base/server-deployment-go.yaml
+    DEPLOYMENT_FILE=config/base/server-deployment-go.yaml >> $LOG_FILE
+    SERVICE_FILE=config/base/server-service.yaml >> $LOG_FILE
+  elif [[ "$TAG_IMAGE" == "udp-go" ]]; then
+    DEPLOYMENT_FILE=config/base/server-deployment-udp-go.yaml >> $LOG_FILE
+    SERVICE_FILE=config/base/server-service-udp.yaml >> $LOG_FILE
   else
-    DEPLOYMENT_FILE=config/base/server-deployment.yaml
+    DEPLOYMENT_FILE=config/base/server-deployment.yaml >> $LOG_FILE
+    SERVICE_FILE=config/base/server-service.yaml >> $LOG_FILE
   fi
 
-  kubectl apply -f $DEPLOYMENT_FILE
-  kubectl apply -f config/base/server-service.yaml
+  kubectl apply -f $DEPLOYMENT_FILE >> $LOG_FILE
+  #kubectl apply -f config/base/server-daemonset.yaml
+  kubectl apply -f $SERVICE_FILE >> $LOG_FILE
 
   if [ "$HPA" = "true" ] ; then
-    kubectl apply -f config/base/hpa.yaml
-    kubectl apply -f config/base/metrics-server.yaml
+    kubectl apply -f config/base/hpa.yaml >> $LOG_FILE
+    kubectl apply -f config/base/metrics-server.yaml >> $LOG_FILE
     MIN_SERVERS=-1
     MAX_SERVERS=-1
   fi
@@ -166,7 +177,7 @@ do
   done
 done
 
-end_env
+#end_env
 
 echo "DONE!"
 

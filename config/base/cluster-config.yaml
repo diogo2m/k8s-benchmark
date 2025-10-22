@@ -6,3 +6,5 @@ localAPIEndpoint:
 kind: ClusterConfiguration
 apiVersion: kubeadm.k8s.io/v1beta4
 clusterName: Gremio
+networking:
+  podSubnet: "192.168.0.0/16"  # Matches Calico

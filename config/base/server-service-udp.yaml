@@ -11,4 +11,5 @@ spec:
     - port: 80
       targetPort: 9999
       nodePort: 32000
+      protocol: UDP
 
